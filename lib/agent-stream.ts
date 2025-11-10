@@ -1,4 +1,3 @@
-import { getDeployment } from "@/lib/environment/deployments"
 import type { Message, TodoItem } from "@/app/types/types"
 
 type StreamCallbacks = {
@@ -32,7 +31,7 @@ const TEXT_DECODER = new TextDecoder()
 function toLangChainMessages(messages: Message[]) {
   return messages.map((message) => {
     // Build message according to LangChain schema
-    const baseMessage: any = {
+    const baseMessage: Record<string, unknown> = {
       content: message.content, // Required field
       type: message.type, // Required: "human", "ai", "system", "tool"
       additional_kwargs: message.additional_kwargs || {},
@@ -251,7 +250,7 @@ function dispatchPayload(payload: Record<string, unknown>, callbacks: StreamCall
           // Check for new task tool calls (sub-agent starting)
           // LangChain puts tool_calls in the message root, not in additional_kwargs
           if (message.type === 'ai') {
-            const toolCalls = (message as any).tool_calls as any[] | undefined
+            const toolCalls = (message as Message & { tool_calls?: Array<Record<string, unknown>> }).tool_calls
             
             console.log('[Dispatch] Checking message for tool_calls:', {
               hasToolCalls: !!toolCalls,
@@ -266,13 +265,18 @@ function dispatchPayload(payload: Record<string, unknown>, callbacks: StreamCall
                 console.log('[Dispatch] Processing tool call:', toolCall.name, toolCall.args)
                 
                 // Capture ALL task tool calls (not just specific agent types)
-                if (toolCall.name === 'task' && toolCall.args) {
+                if (toolCall.name === 'task' && toolCall.args && typeof toolCall.args === 'object') {
                   console.log('[Dispatch] Found sub-agent task:', toolCall)
+                  const args = toolCall.args as Record<string, unknown>
                   const subAgentInfo = {
                     id: toolCall.id,
-                    name: toolCall.args.subagent_type || toolCall.args.agent_type || 'agent',
-                    description: toolCall.args.description || toolCall.args.task || 'Processing...',
-                    status: 'thinking',
+                    name: (typeof args.subagent_type === 'string' ? args.subagent_type : null) ||
+                          (typeof args.agent_type === 'string' ? args.agent_type : null) ||
+                          'agent',
+                    description: (typeof args.description === 'string' ? args.description : null) ||
+                                 (typeof args.task === 'string' ? args.task : null) ||
+                                 'Processing...',
+                    status: 'thinking' as const,
                   }
                   console.log('[Dispatch] Sending subAgent metadata:', subAgentInfo)
                   callbacks.onMetadata?.({ subAgent: subAgentInfo, type: 'start' })

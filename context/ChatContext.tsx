@@ -1,8 +1,9 @@
 "use client"
 
-import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { useQueryState } from 'nuqs'
 import { streamAgent } from '@/lib/agent-stream'
+import { saveThread, getThread, getCurrentThreadId, setCurrentThreadId } from '@/lib/thread-storage'
 import type { Message, ChatThread, StreamState, TodoItem, FileItem, SubAgent } from '@/app/types/types'
 import { toast } from 'sonner'
 
@@ -52,31 +53,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setSidebarCollapsed(prev => !prev)
   }, [])
 
-  // Initialize thread - use URL param or localStorage
-  useEffect(() => {
-    const storedThreadId = localStorage.getItem('chat-thread-id')
-    const threadId = urlThreadId || storedThreadId || generateThreadId()
-    
-    if (!urlThreadId && threadId) {
-      setUrlThreadId(threadId)
-    }
-    
-    localStorage.setItem('chat-thread-id', threadId)
-    
-    setCurrentThread({
-      id: threadId,
-      messages: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    })
-  }, [])
-
   const generateThreadId = () => {
     return `thread_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
   }
 
-  // Save thread state to localStorage whenever it changes
-  useEffect(() => {
+  // Save thread function - called explicitly when needed
+  const saveCurrentThread = useCallback(() => {
     if (!currentThread?.id) return
 
     const threadData = {
@@ -88,34 +70,53 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       updatedAt: Date.now(),
     }
 
-    console.log('[LocalStorage] Saving thread state:', currentThread.id, {
-      messageCount: messages.length,
-      todoCount: todos.length,
-      fileCount: Object.keys(files).length,
-    })
+    saveThread(threadData)
+    setCurrentThreadId(currentThread.id)
+  }, [currentThread, messages, todos, files])
 
-    localStorage.setItem(`thread_${currentThread.id}`, JSON.stringify(threadData))
+  // Debounced save - saves after messages/todos/files change (but not during streaming)
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  useEffect(() => {
+    if (!currentThread?.id || streamState.isStreaming) return
 
-    // Also save to thread list for history
-    const existingThreads = JSON.parse(localStorage.getItem('thread_list') || '[]')
-    const threadIndex = existingThreads.findIndex((t: any) => t.id === currentThread.id)
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+
+    // Save after a short delay to batch rapid changes
+    saveTimeoutRef.current = setTimeout(() => {
+      saveCurrentThread()
+    }, 500)
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+    }
+  }, [currentThread?.id, messages, todos, files, streamState.isStreaming, saveCurrentThread])
+
+  // Initialize thread - use URL param or localStorage
+  useEffect(() => {
+    const storedThreadId = getCurrentThreadId()
+    const threadId = urlThreadId || storedThreadId || generateThreadId()
     
-    const threadSummary = {
-      id: currentThread.id,
-      title: messages[0]?.content.substring(0, 50) || 'New conversation',
-      messageCount: messages.length,
+    if (!urlThreadId && threadId) {
+      setUrlThreadId(threadId)
+    }
+    
+    setCurrentThreadId(threadId)
+    
+    setCurrentThread({
+      id: threadId,
+      messages: [],
+      createdAt: Date.now(),
       updatedAt: Date.now(),
-    }
+    })
+  }, [urlThreadId, setUrlThreadId])
 
-    if (threadIndex >= 0) {
-      existingThreads[threadIndex] = threadSummary
-    } else {
-      existingThreads.unshift(threadSummary)
-    }
-
-    // Keep only last 50 threads
-    localStorage.setItem('thread_list', JSON.stringify(existingThreads.slice(0, 50)))
-  }, [currentThread?.id, messages, todos, files])
+  // Track the last loaded thread ID to prevent reloading the same thread
+  const lastLoadedThreadIdRef = useRef<string | null>(null)
 
   // Load thread state from localStorage when thread changes
   useEffect(() => {
@@ -124,39 +125,52 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    console.log('[LocalStorage] Loading thread state:', urlThreadId)
-    setIsLoadingThreadState(true)
-
-    try {
-      const savedData = localStorage.getItem(`thread_${urlThreadId}`)
-      
-      if (savedData) {
-        const threadData = JSON.parse(savedData)
-        console.log('[LocalStorage] Restored thread state:', {
-          messageCount: threadData.messages?.length,
-          todoCount: threadData.todos?.length,
-          fileCount: Object.keys(threadData.files || {}).length,
-        })
-
-        setMessages(threadData.messages || [])
-        setTodos(threadData.todos || [])
-        setFiles(threadData.files || {})
-        
-        setCurrentThread({
-          id: threadData.id,
-          messages: threadData.messages || [],
-          createdAt: threadData.createdAt,
-          updatedAt: threadData.updatedAt,
-        })
-      } else {
-        console.log('[LocalStorage] No saved state found for thread:', urlThreadId)
-      }
-    } catch (error) {
-      console.error('[LocalStorage] Error loading thread state:', error)
-    } finally {
-      setIsLoadingThreadState(false)
+    // Don't reload if we already loaded this thread (unless it's a different thread)
+    if (lastLoadedThreadIdRef.current === urlThreadId) {
+      console.log('[ChatContext] Thread already loaded, skipping:', urlThreadId)
+      return
     }
-  }, [urlThreadId])
+
+    // Don't load thread state if we're currently streaming
+    // This prevents overwriting messages that are being added during streaming
+    if (streamState.isStreaming) {
+      console.log('[ChatContext] Skipping thread load - currently streaming')
+      return
+    }
+
+    console.log('[ChatContext] Loading thread state:', urlThreadId)
+    setIsLoadingThreadState(true)
+    lastLoadedThreadIdRef.current = urlThreadId
+
+    const threadData = getThread(urlThreadId)
+    
+    if (threadData) {
+      console.log('[ChatContext] Restored thread state:', {
+        messageCount: threadData.messages?.length,
+        todoCount: threadData.todos?.length,
+        fileCount: Object.keys(threadData.files || {}).length,
+      })
+
+      setMessages(threadData.messages || [])
+      setTodos(threadData.todos || [])
+      setFiles(threadData.files || {})
+      
+      setCurrentThread({
+        id: threadData.id,
+        messages: threadData.messages || [],
+        createdAt: threadData.createdAt,
+        updatedAt: threadData.updatedAt,
+      })
+    } else {
+      console.log('[ChatContext] No saved state found for thread:', urlThreadId)
+      // Clear messages if no saved state (new thread)
+      setMessages([])
+      setTodos([])
+      setFiles({})
+    }
+    
+    setIsLoadingThreadState(false)
+  }, [urlThreadId, streamState.isStreaming])
 
   const sendMessage = useCallback(async (content: string) => {
     if (!currentThread || streamState.isStreaming) return
@@ -168,7 +182,34 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       timestamp: Date.now(),
     }
 
-    setMessages(prev => [...prev, userMessage])
+    // Add user message and save immediately
+    setMessages(prev => {
+      const updated = [...prev, userMessage]
+      
+      // Save thread with user message
+      setTimeout(() => {
+        setMessages(currentMessages => {
+          setTodos(currentTodos => {
+            setFiles(currentFiles => {
+              saveThread({
+                id: currentThread.id,
+                messages: currentMessages,
+                todos: currentTodos,
+                files: currentFiles,
+                createdAt: currentThread.createdAt,
+                updatedAt: Date.now(),
+              })
+              setCurrentThreadId(currentThread.id)
+              return currentFiles
+            })
+            return currentTodos
+          })
+          return currentMessages
+        })
+      }, 50)
+      
+      return updated
+    })
     setStreamState({
       isStreaming: true,
       currentMessage: '',
@@ -265,20 +306,24 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             
             // Handle sub-agent metadata from tool_calls
             if (metadata.subAgent) {
-              const agentInfo = metadata.subAgent as any
+              const agentInfo = metadata.subAgent as Record<string, unknown>
               const metadataType = metadata.type as string | undefined
               console.log('[ChatContext] Processing sub-agent:', agentInfo, 'type:', metadataType)
               
               if (metadataType === 'start') {
                 // New sub-agent starting
+                const agentId = typeof agentInfo.id === 'string' ? agentInfo.id : `agent_${Date.now()}`
+                const agentName = typeof agentInfo.name === 'string' ? agentInfo.name : 'Unknown Agent'
+                const agentDescription = typeof agentInfo.description === 'string' ? agentInfo.description : 'Processing task...'
+                
                 const subAgent: SubAgent = {
-                  id: agentInfo.id || `agent_${Date.now()}`,
-                  name: agentInfo.name || 'Unknown Agent',
+                  id: agentId,
+                  name: agentName,
                   status: 'thinking',
                   steps: [
                     {
                       id: `step_${Date.now()}`,
-                      description: agentInfo.description || 'Processing task...',
+                      description: agentDescription,
                       status: 'running',
                       timestamp: Date.now(),
                     }
@@ -293,8 +338,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                 
                 // Create a todo item for this sub-agent task
                 const todo: TodoItem = {
-                  id: agentInfo.id,
-                  content: agentInfo.description,
+                  id: agentId,
+                  content: agentDescription,
                   status: 'in_progress',
                   createdAt: Date.now(),
                   updatedAt: Date.now(),
@@ -313,7 +358,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                 // Add a system message to the chat to notify user
                 const systemMessage: Message = {
                   type: 'system',
-                  content: `🤖 **${agentInfo.name}** is working on: ${agentInfo.description}`,
+                  content: `🤖 **${agentName}** is working on: ${agentDescription}`,
                   id: `system_${Date.now()}`,
                   timestamp: Date.now(),
                 }
@@ -321,12 +366,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                 
               } else if (metadataType === 'complete') {
                 // Sub-agent completing
-                console.log('[ChatContext] Marking sub-agent as completed:', agentInfo.id)
+                const completeAgentId = typeof agentInfo.id === 'string' ? agentInfo.id : ''
+                console.log('[ChatContext] Marking sub-agent as completed:', completeAgentId)
                 
-                const completedAgent = subAgents.find(a => a.id === agentInfo.id)
+                const completedAgent = subAgents.find(a => a.id === completeAgentId)
                 
                 setSubAgents(prev => prev.map(agent => {
-                  if (agent.id === agentInfo.id) {
+                  if (agent.id === completeAgentId) {
+                    const resultOutput = agentInfo.result !== undefined 
+                      ? (typeof agentInfo.result === 'string' ? agentInfo.result : String(agentInfo.result))
+                      : undefined
                     return {
                       ...agent,
                       status: 'completed',
@@ -335,7 +384,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                       steps: agent.steps.map(step => ({
                         ...step,
                         status: 'completed' as const,
-                        output: agentInfo.result,
+                        output: resultOutput,
                       }))
                     }
                   }
@@ -344,9 +393,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                 
                 // Mark the corresponding todo as completed
                 setTodos(prev => {
-                  console.log('[ChatContext] Updating todo status to completed:', agentInfo.id)
+                  console.log('[ChatContext] Updating todo status to completed:', completeAgentId)
                   return prev.map(todo => {
-                    if (todo.id === agentInfo.id) {
+                    if (todo.id === completeAgentId) {
                       console.log('[ChatContext] Found matching todo, marking completed')
                       return {
                         ...todo,
@@ -385,20 +434,62 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             console.log('[ChatContext] Stream ended, saving message')
             
             // Clear any streaming interval
-            if (streamingInterval) {
-              clearInterval(streamingInterval)
-              setStreamingInterval(null)
-            }
+            setStreamingInterval(prev => {
+              if (prev) {
+                clearInterval(prev)
+              }
+              return null
+            })
             
+            // Save the final message before clearing stream state
             setStreamState(prev => {
-              if (prev.currentMessage) {
+              const finalMessage = prev.currentMessage
+              
+              // Add the AI message to messages state
+              if (finalMessage) {
                 const aiMessage: Message = {
                   type: 'ai',
-                  content: prev.currentMessage,
+                  content: finalMessage,
                   id: `msg_${Date.now()}`,
                   timestamp: Date.now(),
                 }
-                setMessages(prevMessages => [...prevMessages, aiMessage])
+                
+                // Add message immediately
+                setMessages(prevMessages => {
+                  // Check if message already exists to avoid duplicates
+                  const exists = prevMessages.some(m => m.id === aiMessage.id)
+                  if (exists) {
+                    return prevMessages
+                  }
+                  return [...prevMessages, aiMessage]
+                })
+                
+                // Save thread immediately after message is added
+                // Use a ref to capture currentThread to avoid stale closure
+                const threadIdRef = { id: currentThread?.id, createdAt: currentThread?.createdAt }
+                setTimeout(() => {
+                  if (threadIdRef.id) {
+                    // Use functional updates to get latest state
+                    setMessages(currentMessages => {
+                      setTodos(currentTodos => {
+                        setFiles(currentFiles => {
+                          saveThread({
+                            id: threadIdRef.id!,
+                            messages: currentMessages,
+                            todos: currentTodos,
+                            files: currentFiles,
+                            createdAt: threadIdRef.createdAt || Date.now(),
+                            updatedAt: Date.now(),
+                          })
+                          setCurrentThreadId(threadIdRef.id!)
+                          return currentFiles
+                        })
+                        return currentTodos
+                      })
+                      return currentMessages
+                    })
+                  }
+                }, 100)
               }
               
               return {
@@ -409,7 +500,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             })
             setAbortController(null)
             
-            console.log('[ChatContext] Stream complete - state is up to date from callbacks')
+            console.log('[ChatContext] Stream complete - message saved')
           },
         },
       })
@@ -421,7 +512,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         error: error instanceof Error ? error.message : 'Unknown error',
       })
     }
-  }, [currentThread, messages, streamState.isStreaming])
+  }, [currentThread, messages, streamState.isStreaming, streamingInterval, subAgents])
 
   const stopStreaming = useCallback(() => {
     if (abortController) {

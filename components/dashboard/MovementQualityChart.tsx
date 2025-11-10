@@ -20,20 +20,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { ChartBarMultiple } from "@/components/ui/chart-bar-multiple";
 const chartConfig = {
-  flexibility: {
-    label: "Flexibility",
+  training_intensity: {
+    label: "Training Intensity",
     color: "var(--chart-1)",
   },
-  strength: {
-    label: "Strength",
+  recovery_time: {
+    label: "Recovery Time",
     color: "var(--chart-2)",
   },
-  balance: {
-    label: "Balance",
-    color: "var(--chart-3)",
+  confidence: {
+    label: "Injury Risk",
+    color: "var(--destructive)",
   },
   label: {
     color: "var(--background)",
@@ -42,16 +41,13 @@ const chartConfig = {
 
 export function MovementQualityChart() {
   const { movementQuality } = useWorkout();
-  const isMobile = useIsMobile();
-  const [timeRange, setTimeRange] = React.useState("30d");
-  const [mounted, setMounted] = React.useState(false);
+  const [timeRange, setTimeRange] = React.useState("7d");
+  const [mounted] = React.useState(() => typeof window !== 'undefined');
 
   React.useEffect(() => {
-    setMounted(true);
-    if (isMobile) {
-      setTimeRange("7d");
-    }
-  }, [isMobile]);
+    console.log('[MovementQualityChart] Raw data:', movementQuality.length, 'entries')
+    console.log('[MovementQualityChart] Sample data:', movementQuality.slice(0, 3))
+  }, [movementQuality])
 
   // Get days based on time range
   const getDays = () => {
@@ -70,17 +66,25 @@ export function MovementQualityChart() {
   const days = getDays();
 
   // Get last N days of data (only on client to avoid hydration issues)
-  const chartData = mounted
-    ? movementQuality.slice(-days).map((mq) => ({
-        date: new Date(mq.date).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        }),
-        flexibility: Math.round(mq.flexibility),
-        strength: Math.round(mq.strength),
-        balance: Math.round(mq.balance),
-      }))
-    : [];
+  const chartData = React.useMemo(() => {
+    if (!mounted) return []
+    return movementQuality.slice(-days).map((mq) => ({
+      date: new Date(mq.date).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+      training_intensity: parseFloat((mq.training_intensity * 100).toFixed(1)),
+      recovery_time: mq.recovery_time,
+      confidence: parseFloat((mq.confidence * 100).toFixed(1)),
+    }))
+  }, [mounted, movementQuality, days])
+
+  React.useEffect(() => {
+    if (mounted && chartData.length > 0) {
+      console.log('[MovementQualityChart] Chart data:', chartData.length, 'points')
+      console.log('[MovementQualityChart] Sample chart data:', chartData.slice(0, 3))
+    }
+  }, [mounted, chartData])
 
   // Calculate trend (only on client)
   const calculateTrend = () => {
@@ -91,13 +95,13 @@ export function MovementQualityChart() {
 
     const recentAvg =
       recent.reduce(
-        (acc, mq) => acc + (mq.flexibility + mq.strength + mq.balance) / 3,
+        (acc, mq) => acc + (mq.training_intensity + mq.confidence) / 2,
         0
       ) / recent.length;
 
     const previousAvg =
       previous.reduce(
-        (acc, mq) => acc + (mq.flexibility + mq.strength + mq.balance) / 3,
+        (acc, mq) => acc + (mq.training_intensity + mq.confidence) / 2,
         0
       ) / previous.length;
 
@@ -111,10 +115,10 @@ export function MovementQualityChart() {
       <CardHeader>
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
-            <CardTitle>Movement Quality Trends</CardTitle>
+            <CardTitle>Training & Recovery Metrics</CardTitle>
             <CardDescription>
               <span className="hidden @[540px]/card:inline">
-                Tracking your flexibility, strength, and balance over the last{" "}
+                Tracking training intensity, recovery time, and injury risk over the last{" "}
                 {days} days
               </span>
               <span className="@[540px]/card:hidden">Last {days} days</span>
@@ -166,9 +170,9 @@ export function MovementQualityChart() {
           config={chartConfig}
           xAxisKey="date"
           bars={[
-            { dataKey: "flexibility", fill: "var(--color-flexibility)" },
-            { dataKey: "strength", fill: "var(--color-strength)" },
-            { dataKey: "balance", fill: "var(--color-balance)" },
+            { dataKey: "training_intensity", fill: "var(--color-training_intensity)" },
+            { dataKey: "recovery_time", fill: "var(--color-recovery_time)" },
+            { dataKey: "confidence", fill: "var(--color-confidence)" },
           ]}
         />
       </CardContent>
@@ -179,8 +183,7 @@ export function MovementQualityChart() {
           <TrendingUp className="h-4 w-4" />
         </div>
         <div className="text-muted-foreground leading-none">
-          Tracking your flexibility, strength, and balance over the last {days}{" "}
-          days
+          Training intensity and injury risk metrics over the last {days} days
         </div>
       </CardFooter>
     </Card>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { useWorkout } from '@/context/WorkoutContext'
@@ -8,12 +8,7 @@ import { Activity, Calendar, TrendingUp, Flame } from 'lucide-react'
 
 export function StatsCards() {
   const { workouts, movementQuality } = useWorkout()
-  const [mounted, setMounted] = useState(false)
-
-  // Ensure calculations only happen on client
-  useEffect(() => {
-    setMounted(true)
-  }, [])
+  const [mounted] = useState(() => typeof window !== 'undefined')
 
   // Calculate total workouts (only on client to avoid hydration issues)
   const totalWorkouts = mounted ? workouts.length : 0
@@ -51,11 +46,11 @@ export function StatsCards() {
 
   const currentStreak = calculateStreak()
 
-  // Calculate average movement quality (only on client)
-  const avgMovementQuality = mounted && movementQuality.length > 0
+  // Calculate average confidence (only on client)
+  const avgConfidence = mounted && movementQuality.length > 0
     ? Math.round(
         movementQuality.slice(-7).reduce((acc, mq) => 
-          acc + (mq.flexibility + mq.strength + mq.balance) / 3, 0
+          acc + (mq.confidence * 100), 0
         ) / Math.min(7, movementQuality.length)
       )
     : 0
@@ -110,11 +105,11 @@ export function StatsCards() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Movement Quality</CardTitle>
+          <CardTitle className="text-sm font-medium">Injury Risk Confidence</CardTitle>
           <TrendingUp className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{avgMovementQuality}%</div>
+          <div className="text-2xl font-bold">{avgConfidence}%</div>
           <p className="text-xs text-muted-foreground">
             7-day average
           </p>

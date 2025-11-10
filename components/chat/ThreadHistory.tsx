@@ -16,7 +16,10 @@ export function ThreadHistory() {
 
   useEffect(() => {
     if (open) {
-      setThreads(getThreadList())
+      // Use setTimeout to avoid synchronous setState in effect
+      setTimeout(() => {
+        setThreads(getThreadList())
+      }, 0)
     }
   }, [open])
 

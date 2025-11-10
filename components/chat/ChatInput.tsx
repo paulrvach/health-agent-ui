@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, KeyboardEvent } from 'react'
+import { useState, useRef, KeyboardEvent, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Send, Square } from 'lucide-react'
 import { useChat } from '@/context/ChatContext'
@@ -9,6 +9,83 @@ export function ChatInput() {
   const [input, setInput] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { sendMessage, stopStreaming, streamState } = useChat()
+
+  // Load workout data from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !streamState.isStreaming && !input) {
+      try {
+        const storedData = localStorage.getItem('pending-workout-query')
+        if (storedData) {
+          const workoutData = JSON.parse(storedData)
+          
+          // Build the complete message
+          let finalMessage = workoutData.message || ''
+          
+          // Append summarized workout data instead of full rawData to avoid token limits
+          if (workoutData.workout?.rawData && typeof workoutData.workout.rawData === 'object') {
+            const rawData = workoutData.workout.rawData as Record<string, unknown>
+            
+            // Extract only key metrics to keep message size reasonable
+            const summary: Record<string, unknown> = {}
+            
+            // Basic workout info
+            if ('workout_name' in rawData) summary.workout_name = rawData.workout_name
+            if ('workout_type' in rawData) summary.workout_type = rawData.workout_type
+            if ('workout_tags' in rawData) summary.workout_tags = rawData.workout_tags
+            if ('duration' in rawData) summary.duration = rawData.duration
+            if ('start_at_timestamp' in rawData) summary.start_at_timestamp = rawData.start_at_timestamp
+            
+            // Key metrics from the main metrics object
+            if ('metrics' in rawData && typeof rawData.metrics === 'object' && rawData.metrics !== null) {
+              const metrics = rawData.metrics as Record<string, unknown>
+              const keyMetrics: Record<string, unknown> = {}
+              
+              // Only include essential metrics
+              const essentialMetrics = [
+                'distance', 'distance_swimming', 'distance_running', 'distance_cycling',
+                'calories_burned', 'heartrate', 'heartrate_max', 'heartrate_resting',
+                'duration_active', 'swimming_lengths', 'steps', 'pace', 'speed'
+              ]
+              
+              essentialMetrics.forEach(key => {
+                if (key in metrics) {
+                  keyMetrics[key] = metrics[key]
+                }
+              })
+              
+              if (Object.keys(keyMetrics).length > 0) {
+                summary.key_metrics = keyMetrics
+              }
+            }
+            
+            // Lap count if available
+            if ('laps' in rawData && Array.isArray(rawData.laps)) {
+              summary.lap_count = rawData.laps.length
+            }
+            
+            // Only add summary if we have meaningful data
+            if (Object.keys(summary).length > 0) {
+              finalMessage += `\n\nWorkout details:\n\`\`\`json\n${JSON.stringify(summary, null, 2)}\n\`\`\``
+            }
+          }
+          
+          // Use setTimeout to avoid synchronous setState in effect
+          setTimeout(() => {
+            setInput(finalMessage)
+            // Auto-focus the textarea
+            textareaRef.current?.focus()
+          }, 0)
+          
+          // Clean up localStorage after reading
+          localStorage.removeItem('pending-workout-query')
+        }
+      } catch (e) {
+        console.error('Failed to load workout data from localStorage:', e)
+        // Clean up corrupted data
+        localStorage.removeItem('pending-workout-query')
+      }
+    }
+  }, [streamState.isStreaming, input])
 
   const handleSubmit = async () => {
     if (!input.trim() || streamState.isStreaming) return

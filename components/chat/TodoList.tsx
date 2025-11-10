@@ -1,7 +1,6 @@
 "use client"
 
 import { CheckCircle2, Circle, Loader2, XCircle, ChevronDown, ChevronRight } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import type { TodoItem } from '@/app/types/types'
 import { useState } from 'react'
@@ -46,27 +45,7 @@ export function TodoList({ todos }: TodoListProps) {
     }
   }
 
-  const getStatusBadge = (status: TodoItem['status']) => {
-    const variants = {
-      pending: 'secondary',
-      in_progress: 'default',
-      completed: 'default',
-      cancelled: 'secondary',
-    }
-    
-    const colors = {
-      pending: 'bg-muted text-muted-foreground',
-      in_progress: '[background:hsl(var(--chart-2))] text-white',
-      completed: '[background:hsl(var(--chart-1))] text-white',
-      cancelled: 'bg-muted text-muted-foreground line-through',
-    }
-
-    return (
-      <Badge variant={variants[status] as any} className={colors[status]}>
-        {status.replace('_', ' ')}
-      </Badge>
-    )
-  }
+  // Removed unused getStatusBadge function
 
   const completedCount = todos.filter(t => t.status === 'completed').length
   const progress = todos.length > 0 ? (completedCount / todos.length) * 100 : 0

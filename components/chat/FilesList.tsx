@@ -64,6 +64,11 @@ export function FilesList({ files, onFileClick }: FilesListProps) {
     }
   }
 
+  interface FileTreeNode {
+    files?: Array<{ path: string; content: string; part: string }>
+    folders?: Record<string, FileTreeNode>
+  }
+
   // Build file tree structure
   const fileTree = Object.entries(files).reduce((acc, [path, content]) => {
     const parts = path.split('/')
@@ -83,10 +88,10 @@ export function FilesList({ files, onFileClick }: FilesListProps) {
     })
 
     return acc
-  }, {} as any)
+  }, {} as FileTreeNode)
 
-  const renderTree = (node: any, currentPath: string = '', level: number = 0) => {
-    const elements: JSX.Element[] = []
+  const renderTree = (node: FileTreeNode, currentPath: string = '', level: number = 0) => {
+    const elements: React.ReactElement[] = []
 
     // Render folders
     if (node.folders) {
@@ -116,7 +121,7 @@ export function FilesList({ files, onFileClick }: FilesListProps) {
 
     // Render files
     if (node.files) {
-      node.files.forEach(({ path, content, part }: any) => {
+      node.files.forEach(({ path, content, part }) => {
         const type = getFileType(path)
         const language = getLanguage(path)
 

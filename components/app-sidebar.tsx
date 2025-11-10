@@ -3,13 +3,9 @@
 import * as React from "react"
 import {
   Activity,
-  BarChart3,
   Brain,
-  Calendar,
-  Dumbbell,
   Heart,
   Settings,
-  TrendingUp,
 } from "lucide-react"
 import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
@@ -42,19 +38,9 @@ const data = {
       icon: Brain,
     },
     {
-      title: "Workouts",
-      url: "#",
-      icon: Dumbbell,
-    },
-    {
-      title: "Progress",
-      url: "#",
-      icon: TrendingUp,
-    },
-    {
-      title: "Analytics",
-      url: "#",
-      icon: BarChart3,
+      title: "Profile",
+      url: "/profile",
+      icon: Heart,
     },
   ],
   navSecondary: [

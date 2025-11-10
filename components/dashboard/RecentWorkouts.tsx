@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -9,11 +9,7 @@ import { Calendar, Dumbbell } from 'lucide-react'
 
 export function RecentWorkouts() {
   const { workouts } = useWorkout()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
+  const [mounted] = useState(() => typeof window !== 'undefined')
 
   // Get last 5 workouts
   const recentWorkouts = [...workouts]
@@ -139,7 +135,7 @@ export function RecentWorkouts() {
 
                   {workout.notes && (
                     <p className="text-sm text-muted-foreground italic">
-                      "{workout.notes}"
+                      &quot;{workout.notes}&quot;
                     </p>
                   )}
                 </div>

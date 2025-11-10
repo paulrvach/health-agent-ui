@@ -1,6 +1,5 @@
 "use client"
 
-import { TrendingUp } from "lucide-react"
 import { Bar, BarChart, CartesianGrid, XAxis } from "recharts"
 
 import {
@@ -11,7 +10,7 @@ import {
 } from "@/components/ui/chart"
 
 interface ChartBarMultipleProps {
-  data: any[]
+  data: Record<string, unknown>[]
   config: ChartConfig
   xAxisKey: string
   bars: Array<{ dataKey: string; fill: string }>

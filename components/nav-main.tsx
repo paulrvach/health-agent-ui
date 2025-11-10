@@ -2,7 +2,6 @@
 
 import { usePathname } from 'next/navigation'
 import { Plus, type LucideIcon } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import {
   SidebarGroup,
   SidebarGroupContent,

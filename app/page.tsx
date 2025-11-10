@@ -3,6 +3,7 @@
 import { WorkoutInputDialog } from '@/components/WorkoutInputDialog'
 import { StatsCards } from '@/components/dashboard/StatsCards'
 import { MovementQualityChart } from '@/components/dashboard/MovementQualityChart'
+import { RecentWorkoutsCarousel } from '@/components/dashboard/RecentWorkoutsCarousel'
 import { InjuryRiskIndicators } from '@/components/dashboard/InjuryRiskIndicators'
 import { RecentWorkouts } from '@/components/dashboard/RecentWorkouts'
 import { AIInsights } from '@/components/dashboard/AIInsights'
@@ -41,8 +42,9 @@ export default function Home() {
           </div>
 
           {/* Movement Quality Chart */}
-          <div className="px-4 lg:px-6">
+          <div className="px-4 lg:px-6 space-y-6">
             <MovementQualityChart />
+            <RecentWorkoutsCarousel />
           </div>
 
           {/* Main Content Grid */}

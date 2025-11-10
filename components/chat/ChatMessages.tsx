@@ -1,23 +1,122 @@
 "use client"
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { MessageBubble } from './MessageBubble'
 import { StreamingIndicator } from './StreamingIndicator'
 import { useChat } from '@/context/ChatContext'
 import { Brain } from 'lucide-react'
+import type { Message } from '@/app/types/types'
+
+interface ProcessedMessage {
+  message: Message
+  toolCalls: Array<{
+    id: string
+    name: string
+    args: Record<string, unknown>
+    status: 'pending' | 'completed'
+    result?: string
+  }>
+  showAvatar: boolean
+}
 
 export function ChatMessages() {
-  const { messages, streamState } = useChat()
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const { messages, streamState, isLoadingThreadState } = useChat()
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamState.currentMessage])
 
-  if (messages.length === 0 && !streamState.isStreaming) {
+  // Process messages to group AI messages with their tool calls (similar to deep-agents-ui)
+  const processedMessages = useMemo<ProcessedMessage[]>(() => {
+    const messageMap = new Map<string, ProcessedMessage>()
+
+    messages.forEach((message: Message) => {
+      if (message.type === 'ai') {
+        const toolCallsInMessage: Array<{
+          id: string
+          name: string
+          args: Record<string, unknown>
+        }> = []
+
+        // Extract tool calls from various possible locations
+        if (message.additional_kwargs?.tool_calls && Array.isArray(message.additional_kwargs.tool_calls)) {
+          message.additional_kwargs.tool_calls.forEach((toolCall: unknown) => {
+            if (toolCall && typeof toolCall === 'object' && 'name' in toolCall) {
+              toolCallsInMessage.push({
+                id: (toolCall as { id?: string }).id || `tool-${Math.random()}`,
+                name: String((toolCall as { name: string }).name),
+                args: ((toolCall as { args?: Record<string, unknown> }).args || {}) as Record<string, unknown>
+              })
+            }
+          })
+        }
+
+        // Also check for tool_calls at message root (LangChain format)
+        const messageWithToolCalls = message as Message & { tool_calls?: Array<Record<string, unknown>> }
+        if (messageWithToolCalls.tool_calls && Array.isArray(messageWithToolCalls.tool_calls)) {
+          messageWithToolCalls.tool_calls.forEach((toolCall) => {
+            if (toolCall && typeof toolCall === 'object' && 'name' in toolCall) {
+              toolCallsInMessage.push({
+                id: String(toolCall.id || `tool-${Math.random()}`),
+                name: String(toolCall.name),
+                args: (toolCall.args || {}) as Record<string, unknown>
+              })
+            }
+          })
+        }
+
+        const toolCallsWithStatus = toolCallsInMessage.map(toolCall => ({
+          ...toolCall,
+          status: 'pending' as const
+        }))
+
+        messageMap.set(message.id || `msg-${Math.random()}`, {
+          message,
+          toolCalls: toolCallsWithStatus,
+          showAvatar: false // Will be set based on previous message
+        })
+      } else if (message.type === 'tool') {
+        // Find the corresponding AI message and update tool call status
+        const toolCallId = message.tool_call_id
+        if (toolCallId) {
+          for (const [, data] of messageMap.entries()) {
+            const toolCallIndex = data.toolCalls.findIndex(tc => tc.id === toolCallId)
+            if (toolCallIndex !== -1) {
+              data.toolCalls[toolCallIndex] = {
+                ...data.toolCalls[toolCallIndex],
+                status: 'completed',
+                result: message.content
+              }
+              break
+            }
+          }
+        }
+      } else if (message.type === 'human' || message.type === 'system') {
+        messageMap.set(message.id || `msg-${Math.random()}`, {
+          message,
+          toolCalls: [],
+          showAvatar: false // Will be set based on previous message
+        })
+      }
+    })
+
+    // Set showAvatar based on whether previous message has different type
+    const processedArray = Array.from(messageMap.values())
+    return processedArray.map((data, index) => {
+      const prevMessage = index > 0 ? processedArray[index - 1].message : null
+      return {
+        ...data,
+        showAvatar: data.message.type !== prevMessage?.type
+      }
+    })
+  }, [messages])
+
+  const hasMessages = processedMessages.length > 0 || streamState.isStreaming
+
+  if (!hasMessages && !isLoadingThreadState) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="text-center space-y-6 max-w-lg">
@@ -50,28 +149,47 @@ export function ChatMessages() {
   }
 
   return (
-    <ScrollArea className="flex-1 px-4" ref={scrollRef}>
-      <div className="max-w-4xl mx-auto py-4 space-y-4">
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
-        ))}
-        
-        {streamState.isStreaming && streamState.currentMessage && (
-          <MessageBubble
-            message={{
-              type: 'ai',
-              content: streamState.currentMessage,
-              id: 'streaming',
-            }}
-            isStreaming
-          />
+    <ScrollArea className="flex-1 w-full">
+      <div className="px-4 lg:px-6 py-4">
+        {isLoadingThreadState && (
+          <div className="flex items-center justify-center h-full min-h-[200px]">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+          </div>
         )}
         
-        {streamState.isStreaming && !streamState.currentMessage && (
-          <StreamingIndicator />
+        {!isLoadingThreadState && (
+          <div className="max-w-4xl mx-auto space-y-1">
+            {processedMessages.map((data) => (
+              <MessageBubble
+                key={data.message.id || `msg-${Math.random()}`}
+                message={data.message}
+                toolCalls={data.toolCalls}
+                showAvatar={data.showAvatar}
+              />
+            ))}
+            
+            {streamState.isStreaming && streamState.currentMessage && (
+              <MessageBubble
+                message={{
+                  type: 'ai',
+                  content: streamState.currentMessage,
+                  id: 'streaming',
+                }}
+                toolCalls={[]}
+                showAvatar={processedMessages.length === 0 || processedMessages[processedMessages.length - 1]?.message.type !== 'ai'}
+                isStreaming
+              />
+            )}
+            
+            {streamState.isStreaming && !streamState.currentMessage && (
+              <div className="flex items-center justify-center gap-2 py-4 text-foreground/60">
+                <StreamingIndicator />
+              </div>
+            )}
+            
+            <div ref={messagesEndRef} />
+          </div>
         )}
-        
-        <div ref={bottomRef} />
       </div>
     </ScrollArea>
   )

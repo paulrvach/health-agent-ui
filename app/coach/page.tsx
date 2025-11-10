@@ -1,9 +1,9 @@
 "use client"
 
+import { Suspense } from 'react'
 import { ChatProvider, useChat } from '@/context/ChatContext'
 import { ChatInterface } from '@/components/chat/ChatInterface'
 import { TasksFilesSidebar } from '@/components/chat/TasksFilesSidebar'
-import { SubAgentPanel } from '@/components/chat/SubAgentPanel'
 import { FileViewDialog } from '@/components/chat/FileViewDialog'
 
 function CoachContent() {
@@ -11,10 +11,8 @@ function CoachContent() {
     todos,
     files,
     selectedFile,
-    selectedSubAgent,
     sidebarCollapsed,
     setSelectedFile,
-    setSelectedSubAgent,
     toggleSidebar,
   } = useChat()
 
@@ -46,7 +44,9 @@ function CoachContent() {
 export default function CoachPage() {
   return (
     <ChatProvider>
-      <CoachContent />
+      <Suspense fallback={<div className="flex-1 flex items-center justify-center">Loading...</div>}>
+        <CoachContent />
+      </Suspense>
     </ChatProvider>
   )
 }
