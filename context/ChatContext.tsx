@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, Suspense } from 'react'
 import { useQueryState } from 'nuqs'
 import { streamAgent } from '@/lib/agent-stream'
 import { saveThread, getThread, getCurrentThreadId, setCurrentThreadId } from '@/lib/thread-storage'
@@ -30,7 +30,7 @@ interface ChatContextType {
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined)
 
-export function ChatProvider({ children }: { children: React.ReactNode }) {
+function ChatProviderContent({ children }: { children: React.ReactNode }) {
   const [urlThreadId, setUrlThreadId] = useQueryState('threadId')
   const [messages, setMessages] = useState<Message[]>([])
   const [streamState, setStreamState] = useState<StreamState>({
@@ -600,6 +600,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
     </ChatContext.Provider>
+  )
+}
+
+export function ChatProvider({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ChatProviderContent>{children}</ChatProviderContent>
+    </Suspense>
   )
 }
 
