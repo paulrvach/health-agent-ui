@@ -17,9 +17,9 @@ function CoachContent() {
   } = useChat()
 
   return (
-    <div className="flex flex-1 h-[calc(100vh-4rem)]">
+    <div className="flex flex-1 h-[calc(100vh-4rem)] ">
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 h-[calc(100vh-4rem)] overflow-hidden">
         <ChatInterface />
       </div>
 
